@@ -39,6 +39,10 @@ class State:
 
 # --- Helper Function ---
 def get_current_project(state: State) -> Project:
+    """
+    Retrieves the currently active project from the application state based on the current_project_name.
+    Returns the Project object if found, otherwise returns None.
+    """
     for p in state.projects:
         if p.name == state.current_project_name:
             return p
@@ -48,6 +52,10 @@ def get_current_project(state: State) -> Project:
 
 @route
 def index(state: State) -> Page:
+    """
+    Renders the main Projects Hub page where users can view all existing projects, 
+    open a specific project, delete projects, or create a new project.
+    """
     content = [
         Header("📂 Projects Hub"),
         Div([Text(f"Total Projects Created Lifetime: {state.total_projects_created}")]),
@@ -87,6 +95,10 @@ def index(state: State) -> Page:
 
 @route
 def create_project_action(state: State, new_project_name: str) -> Page:
+    """
+    Validates and creates a new project with default settings, adds it to the state's 
+    project list, updates the current active project, and navigates to the new project's dashboard.
+    """
     if new_project_name == "" or new_project_name.isspace():
         state.global_message = "Project name cannot be empty."
         return index(state)
@@ -105,12 +117,20 @@ def create_project_action(state: State, new_project_name: str) -> Page:
 
 @route
 def open_project_action(state: State, selected_project: str) -> Page:
+    """
+    Updates the state's active project name to the user's selection and routes them 
+    to that project's dashboard.
+    """
     state.current_project_name = selected_project
     state.global_message = ""
     return project_dashboard(state)
 
 @route
 def delete_project_action(state: State, selected_project: str) -> Page:
+    """
+    Removes the specified project from the state's list of projects and 
+    clears the active project selection if the currently opened project was deleted.
+    """
     state.projects = [p for p in state.projects if p.name != selected_project]
     state.global_message = f"Project '{selected_project}' was deleted."
     if state.current_project_name == selected_project:
@@ -119,6 +139,10 @@ def delete_project_action(state: State, selected_project: str) -> Page:
 
 @route
 def project_dashboard(state: State) -> Page:
+    """
+    Renders the overview dashboard for the currently active project, displaying 
+    aggregate metrics (total parts, weight, cost) and quick action navigation links.
+    """
     project = get_current_project(state)
     if not project: return index(state)
         
@@ -154,6 +178,10 @@ def project_dashboard(state: State) -> Page:
 
 @route
 def inventory_route(state: State) -> Page:
+    """
+    Displays the project's entire parts inventory. Applies current search, sorting, 
+    and filtering preferences. Allows users to change part statuses and manage individual parts.
+    """
     project = get_current_project(state)
     purchased_statuses = ["Ordered", "Received"]
     total_spent = sum(p.cost * p.quantity for p in project.parts if p.status in purchased_statuses)
@@ -263,6 +291,10 @@ def inventory_route(state: State) -> Page:
 
 @route
 def save_statuses_action(state: State, **kwargs) -> Page:
+    """
+    Parses dynamic kwargs corresponding to part status select boxes in the inventory 
+    and updates the purchase status of each part accordingly.
+    """
     project = get_current_project(state)
     updated_count = 0
     
@@ -281,6 +313,10 @@ def save_statuses_action(state: State, **kwargs) -> Page:
 
 @route
 def update_inventory_view_action(state: State, search_query: str, sort_by: str, show_purchased: bool) -> Page:
+    """
+    Updates the active project's search, sorting, and filtering state variables based 
+    on the user's view preferences on the inventory page.
+    """
     project = get_current_project(state)
     project.current_search = search_query
     project.current_sort = sort_by
@@ -290,6 +326,10 @@ def update_inventory_view_action(state: State, search_query: str, sort_by: str, 
 
 @route
 def duplicate_part_action(state: State, selected_part_name: str) -> Page:
+    """
+    Finds the selected part in the active project and creates an exact copy of it 
+    appended with ' (Copy)' in its name, adding it to the inventory.
+    """
     project = get_current_project(state)
     part_to_copy = next((p for p in project.parts if p.name == selected_part_name), None)
     if part_to_copy:
@@ -311,6 +351,9 @@ def duplicate_part_action(state: State, selected_part_name: str) -> Page:
 
 @route
 def remove_part_action(state: State, selected_part_name: str) -> Page:
+    """
+    Deletes the selected part from the active project's inventory.
+    """
     project = get_current_project(state)
     project.parts = [p for p in project.parts if p.name != selected_part_name]
     project.status_message = f"'{selected_part_name}' was successfully removed."
@@ -318,6 +361,10 @@ def remove_part_action(state: State, selected_part_name: str) -> Page:
 
 @route
 def edit_part_setup_action(state: State, selected_part_name: str) -> Page:
+    """
+    Sets the active project's 'editing_part_name' state to match the user's selection 
+    and redirects them to the dedicated edit part page.
+    """
     project = get_current_project(state)
     project.editing_part_name = selected_part_name
     project.status_message = ""
@@ -325,6 +372,10 @@ def edit_part_setup_action(state: State, selected_part_name: str) -> Page:
 
 @route
 def edit_part_page(state: State) -> Page:
+    """
+    Renders the form page prepopulated with a specific part's data, allowing the user 
+    to modify the part's characteristics, metrics, and sourcing notes.
+    """
     project = get_current_project(state)
     part_to_edit = next((p for p in project.parts if p.name == project.editing_part_name), None)
             
@@ -362,6 +413,10 @@ def edit_part_page(state: State) -> Page:
 
 @route
 def update_part_action(state: State, part_name: str, part_subsystem: str, part_quantity: str, part_weight: str, part_cost: str, part_material: str, part_vendor: str, part_url: str, part_notes: str) -> Page:
+    """
+    Validates form submissions from the edit part page and updates the data of 
+    the currently targeted part. Redirects back to inventory upon success.
+    """
     project = get_current_project(state)
     if not part_name or part_name.isspace():
         project.status_message = "Error: Part name cannot be empty."
@@ -390,6 +445,10 @@ def update_part_action(state: State, part_name: str, part_subsystem: str, part_q
 
 @route
 def add_part_form_route(state: State) -> Page:
+    """
+    Renders an empty form page allowing a user to input data and metrics to 
+    create a brand new part for the active project.
+    """
     project = get_current_project(state)
     return Page(
         state,
@@ -421,6 +480,10 @@ def add_part_form_route(state: State) -> Page:
 
 @route
 def add_part_action(state: State, part_name: str, part_subsystem: str, part_quantity: str, part_weight: str, part_cost: str, part_material: str, part_vendor: str, part_url: str, part_notes: str) -> Page:
+    """
+    Validates form submissions from the add part page, creates a new Part object, 
+    and appends it to the active project's parts list.
+    """
     project = get_current_project(state)
     if not part_name or part_name.isspace():
         project.status_message = "Error: Part name cannot be empty."
@@ -452,6 +515,10 @@ def add_part_action(state: State, part_name: str, part_subsystem: str, part_quan
 
 @route
 def calculator_route(state: State) -> Page:
+    """
+    Displays the active project's budget and weight limits compared to the accumulated 
+    totals from the inventory, and provides a form to update the limits.
+    """
     project = get_current_project(state)
     total_cost = sum(p.cost * p.quantity for p in project.parts)
     total_weight = sum(p.weight * p.quantity for p in project.parts)
@@ -481,6 +548,9 @@ def calculator_route(state: State) -> Page:
 
 @route
 def update_limits_action(state: State, new_budget: str, new_weight: str) -> Page:
+    """
+    Validates and updates the budget and maximum weight limits for the active project.
+    """
     project = get_current_project(state)
     try: project.budget = float(new_budget)
     except ValueError: pass
@@ -490,6 +560,9 @@ def update_limits_action(state: State, new_budget: str, new_weight: str) -> Page
 
 @route
 def about_route(state: State) -> Page:
+    """
+    Renders an informational page describing the purpose and usage of the application.
+    """
     return Page(
         state,
         [
@@ -505,6 +578,10 @@ def about_route(state: State) -> Page:
 
 # --- 4. Unit Testing Block ---
 def run_tests() -> None:
+    """
+    Executes automated unit tests via bakery assertions to verify core state 
+    mutations and action functions behave correctly.
+    """
     test_state = State(projects=[Project("Alpha", [], 100, 50, "All", "Name (A-Z)", "", "", "", True)], 
                        current_project_name="Alpha", global_message="", total_projects_created=1)
     assert_equal(get_current_project(test_state).name, "Alpha")
