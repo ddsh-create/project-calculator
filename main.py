@@ -161,7 +161,9 @@ def inventory_route(state: State) -> Page:
     
     content = [
         Header(f"📋 Inventory: {project.name}"),
-        Div([Button("🔙 Back to Dashboard", project_dashboard)]),
+        Div([
+            Button("🔙 Back to Dashboard", project_dashboard)
+        ]),
         Text("")
     ]
 
@@ -479,54 +481,6 @@ def calculator_route(state: State) -> Page:
 
 @route
 def update_limits_action(state: State, new_budget: str, new_weight: str) -> Page:
-    project = get_current_project(state)
-    try: project.budget = float(new_budget)
-    except ValueError: pass
-    try: project.max_weight = float(new_weight)
-    except ValueError: pass
-    return calculator_route(state)
-
-@route
-def about_route(state: State) -> Page:
-    return Page(
-        state,
-        [
-            Header("ℹ️ About This Tool"),
-            Text(""),
-            Div([Text("This site is a place where engineers working on projects can ")]),
-            Div([Text("input their required materials and tools to get a total ")]),
-            Div([Text("cost, weight, and other stats about their project.")]),
-            Text(""), Text(""),
-            Div([Button("🔙 Back to Projects Hub", index)])
-        ]
-    )
-
-# --- 4. Unit Testing Block ---
-def run_tests() -> None:
-    test_state = State(projects=[Project("Alpha", [], 100, 50, "All", "Name (A-Z)", "", "", "", True)], 
-                       current_project_name="Alpha", global_message="", total_projects_created=1)
-    assert_equal(get_current_project(test_state).name, "Alpha")
-
-    new_state = State([], "", "", 0)
-    create_project_action(new_state, "Beta")
-    assert_equal(len(new_state.projects), 1)
-    
-    open_project_action(test_state, "Charlie")
-    assert_equal(test_state.current_project_name, "Charlie")
-
-    test_state.current_project_name = "Alpha"
-    update_limits_action(test_state, "5000.5", "150.0")
-    assert_equal(test_state.projects[0].budget, 5000.5)
-    assert_equal(test_state.projects[0].max_weight, 150.0)
-
-run_tests()
-
-# --- 5. Initial State & Server Start ---
-initial_state = State(
-    projects=[], current_project_name="", 
-    global_message="Welcome! Select or create a project to begin.", total_projects_created=0
-)
-start_server(initial_state)date_limits_action(state: State, new_budget: str, new_weight: str) -> Page:
     project = get_current_project(state)
     try: project.budget = float(new_budget)
     except ValueError: pass
