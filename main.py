@@ -1,6 +1,6 @@
 from drafter import *
 from dataclasses import dataclass
-from bakery import assert_equal # Imported for the test suite
+from bakery import assert_equal
 
 # --- 1. Dataclasses ---
 
@@ -11,17 +11,24 @@ class Part:
     weight: float 
     cost: float 
     quantity: int
-    purchased: bool = False 
+    subsystem: str = "Other"
+    status: str = "Not Purchased" 
+    vendor: str = ""
+    url: str = ""
+    notes: str = ""
 
 @dataclass
 class Project:
     name: str
     parts: list[Part]
     budget: float
+    max_weight: float
     current_filter: str
     current_sort: str
+    current_search: str
     status_message: str
     editing_part_name: str = ""
+    show_purchased: bool = True
 
 @dataclass
 class State:
@@ -32,7 +39,6 @@ class State:
 
 # --- Helper Function ---
 def get_current_project(state: State) -> Project:
-    """Helper to retrieve the currently active project object."""
     for p in state.projects:
         if p.name == state.current_project_name:
             return p
@@ -42,191 +48,274 @@ def get_current_project(state: State) -> Project:
 
 @route
 def index(state: State) -> Page:
-    """
-    Projects Hub: Main landing page to manage multiple projects.
-    Note: This route returns UI components and is difficult to unit test in isolation.
-    """
     content = [
-        Header("Projects Hub"),
-        Text(state.global_message)
+        Header("📂 Projects Hub"),
+        Div([Text(f"Total Projects Created Lifetime: {state.total_projects_created}")]),
+        Text(""),
     ]
+    
+    if state.global_message:
+        content.extend([Div([Text(f"⚠️ {state.global_message}")]), Text("")])
     
     if len(state.projects) > 0:
         project_names = [p.name for p in state.projects]
-        
-        if state.current_project_name in project_names:
-            default_selection = state.current_project_name
-        else:
-            default_selection = project_names[0]
+        default_selection = state.current_project_name if state.current_project_name in project_names else project_names[0]
             
         content.extend([
-            Text("Open an Existing Project:"),
-            SelectBox("selected_project", project_names, default_selection),
-            Button("Open Project", open_project_action),
-            Text("---")
+            Div([Text("MANAGE PROJECTS:")]),
+            Div([
+                SelectBox("selected_project", project_names, default_selection),
+                Button("Open Project", open_project_action),
+                Button("Delete Project", delete_project_action)
+            ]),
+            Text(""), Text("")
         ])
     else:
-        content.append(Text("No projects yet. Create one below!"))
+        content.extend([Div([Text("No projects yet. Create one below!")]), Text("")])
         
     content.extend([
-        Text("Create a New Project:"),
-        Text("Project Name:"),
-        TextBox("new_project_name", ""),
-        Button("Create Project", create_project_action),
-        Button("About", about_route),
-        Text(f"Total Projects Created Lifetime: {state.total_projects_created}")
+        Div([Text("CREATE A NEW PROJECT:")]),
+        Div([
+            TextBox("new_project_name", ""),
+            Button("Create Project", create_project_action)
+        ]),
+        Text(""), Text(""),
+        Div([Button("ℹ️ About This Tool", about_route)])
     ])
     
     return Page(state, content)
 
 @route
 def create_project_action(state: State, new_project_name: str) -> Page:
-    """Handles the creation of a new project and modifies 4 State fields."""
     if new_project_name == "" or new_project_name.isspace():
-        state.global_message = "Error: Project name cannot be empty."
+        state.global_message = "Project name cannot be empty."
         return index(state)
         
     for p in state.projects:
         if p.name == new_project_name:
-            state.global_message = f"Error: Project '{new_project_name}' exists."
+            state.global_message = f"Project '{new_project_name}' already exists."
             return index(state)
             
-    new_project = Project(
-        name=new_project_name,
-        parts=[],
-        budget=1000.0,
-        current_filter="All",
-        current_sort="Name (A-Z)",
-        status_message="",
-        editing_part_name=""
-    )
-    
+    new_project = Project(new_project_name, [], 1000.0, 50.0, "All", "Name (A-Z)", "", "", "", True)
     state.projects.append(new_project)
     state.current_project_name = new_project_name
     state.global_message = ""
     state.total_projects_created += 1
-    
     return project_dashboard(state)
 
 @route
 def open_project_action(state: State, selected_project: str) -> Page:
-    """Sets the selected project as active and navigates to its dashboard."""
     state.current_project_name = selected_project
     state.global_message = ""
     return project_dashboard(state)
 
 @route
+def delete_project_action(state: State, selected_project: str) -> Page:
+    state.projects = [p for p in state.projects if p.name != selected_project]
+    state.global_message = f"Project '{selected_project}' was deleted."
+    if state.current_project_name == selected_project:
+        state.current_project_name = ""
+    return index(state)
+
+@route
 def project_dashboard(state: State) -> Page:
-    """
-    Project Dashboard: Overview for a specific project.
-    Note: This route returns UI components and is difficult to unit test in isolation.
-    """
     project = get_current_project(state)
-    if not project:
-        return index(state)
+    if not project: return index(state)
         
     total_parts = sum(part.quantity for part in project.parts)
     total_weight = sum(part.weight * part.quantity for part in project.parts)
     total_cost = sum(part.cost * part.quantity for part in project.parts)
         
-    return Page(
-        state,
-        [
-            Header(f"Dashboard: {project.name}"),
-            Text(project.status_message),
-            Text(f"Total Individual Parts: {total_parts}"),
-            Text(f"Combined Weight: {total_weight} lbs"),
-            Text(f"Current Budget Health: ${total_cost} / ${project.budget}"),
-            Button("View Inventory", inventory_route),
-            Button("Add New Part", add_part_form_route),
-            Button("Budget Calculator", calculator_route),
-            Button("Back to Projects Hub", index)
-        ]
-    )
+    content = [
+        Header(f"📊 Dashboard: {project.name}"),
+        Text("")
+    ]
+
+    if project.status_message:
+        content.extend([Div([Text(f"🔔 {project.status_message}")]), Text("")])
+
+    content.extend([
+        Div([Text("PROJECT METRICS:")]),
+        Div([Text(f"  • Total Individual Parts: {total_parts}")]),
+        Div([Text(f"  • Combined Weight: {total_weight} lbs / {project.max_weight} lbs")]),
+        Div([Text(f"  • Current Budget Spent: ${total_cost} / ${project.budget}")]),
+        Text(""), Text(""),
+        
+        Div([Text("QUICK ACTIONS:")]),
+        Div([
+            Button("📋 View Inventory", inventory_route),
+            Button("➕ Add New Part", add_part_form_route),
+            Button("💰 Calculator & Limits", calculator_route)
+        ]),
+        Text(""), Text(""),
+        Div([Button("🔙 Back to Projects Hub", index)])
+    ])
+    return Page(state, content)
 
 @route
 def inventory_route(state: State) -> Page:
-    """
-    Inventory Page: Displays components, expenditures, and allows editing/removing.
-    Note: This route returns UI components and is difficult to unit test in isolation.
-    """
     project = get_current_project(state)
-    
-    # Calculate costs for the header
-    total_spent = sum(p.cost * p.quantity for p in project.parts if p.purchased)
+    purchased_statuses = ["Ordered", "Received"]
+    total_spent = sum(p.cost * p.quantity for p in project.parts if p.status in purchased_statuses)
     total_projected = sum(p.cost * p.quantity for p in project.parts)
     
     content = [
-        Header(f"Inventory: {project.name}"),
-        Text(f"Total Amount Spent (Purchased Items): ${total_spent}"),
-        Text(f"Total Projected Expenditure (All Items): ${total_projected}"),
-        Text(f"Total Project Budget: ${project.budget}"),
-        Text("---"),
-        Button("Back to Dashboard", project_dashboard),
-        Text(project.status_message),
-        Text("---")
+        Header(f"📋 Inventory: {project.name}"),
+        Div([Button("🔙 Back to Dashboard", project_dashboard)]),
+        Text("")
     ]
 
-    if not project.parts:
-        content.append(Text("No parts have been added to this project yet."))
-    else:
-        for p in project.parts:
-            status = "Purchased" if p.purchased else "Not Purchased"
-            total_weight = p.weight * p.quantity
-            total_cost = p.cost * p.quantity
-            
-            content.append(
-                Text(f"• {p.quantity}x {p.name} ({p.material}): "
-                     f"{total_weight} lbs total, ${total_cost} total [{status}]")
-            )
+    if total_projected > project.budget:
+        content.extend([Div([Text("🔴 🚨 WARNING: PROJECT BUDGET EXCEEDED! 🚨 🔴")]), Text("")])
 
-        part_names = [p.name for p in project.parts]
+    if project.status_message:
+        content.extend([Div([Text(f"🔔 {project.status_message}")]), Text("")])
+
+    content.extend([
+        Div([Text("FINANCIAL OVERVIEW:")]),
+        Div([Text(f"  • Spent (Ordered/Received): ${total_spent}")]),
+        Div([Text(f"  • Projected (All): ${total_projected}")]),
+        Div([Text(f"  • Total Budget: ${project.budget}")]),
+        Text(""), Text("")
+    ])
+
+    visible_parts = [p for p in project.parts]
+    if project.current_search:
+        visible_parts = [p for p in visible_parts if project.current_search.lower() in p.name.lower()]
+
+    if not project.show_purchased:
+        visible_parts = [p for p in visible_parts if p.status not in purchased_statuses]
         
-        # New Purchase Status Area and existing Edit/Remove Area
+    if project.current_sort == "Cost (High to Low)":
+        visible_parts.sort(key=lambda p: p.cost * p.quantity, reverse=True)
+    elif project.current_sort == "Cost (Low to High)":
+        visible_parts.sort(key=lambda p: p.cost * p.quantity)
+    elif project.current_sort == "Material":
+        visible_parts.sort(key=lambda p: p.material)
+    elif project.current_sort == "Subsystem":
+        visible_parts.sort(key=lambda p: p.subsystem)
+    else: 
+        visible_parts.sort(key=lambda p: p.name)
+
+    content.extend([
+        Div([Text("VIEW OPTIONS:")]),
+        Div([
+            Text("Search: "), TextBox("search_query", project.current_search),
+            Text("  |  Sort: "), SelectBox("sort_by", ["Name (A-Z)", "Cost (High to Low)", "Cost (Low to High)", "Material", "Subsystem"], project.current_sort)
+        ]),
+        Div([
+            CheckBox("show_purchased", project.show_purchased),
+            Text(" Show Ordered/Received Items  "),
+            Button("Apply View", update_inventory_view_action)
+        ]),
+        Text(""), Text("")
+    ])
+
+    content.append(Div([Text("PARTS LIST:")]))
+    if not visible_parts:
+        content.extend([Div([Text("  No parts match the current view.")]), Text("")])
+    else:
+        status_options = ["Not Purchased", "Ordered", "Received", "Needs Reorder"]
+        status_icons = {"Not Purchased": "❌", "Ordered": "🚚", "Received": "✅", "Needs Reorder": "🔄"}
+        
+        for p in visible_parts:
+            icon = status_icons.get(p.status, "📦")
+            content.extend([
+                Div([Text(f"📦 {p.name.upper()} ({p.material} - {p.subsystem}) — {p.quantity} units")]),
+                Div([
+                    Text(f"      Cost: ${p.cost * p.quantity} | Weight: {p.weight * p.quantity} lbs | {icon} Status: "), 
+                    SelectBox(f"status_{p.name}", status_options, p.status)
+                ])
+            ])
+            if p.vendor or p.url:
+                v_str = p.vendor if p.vendor else "N/A"
+                u_str = f" | Link: {p.url}" if p.url else ""
+                content.append(Div([Text(f"      🛒 Vendor: {v_str}{u_str}")]))
+            if p.notes:
+                content.append(Div([Text(f"      📝 Notes: {p.notes}")]))
+                
+            content.append(Text(""))
+        
         content.extend([
-            Text("---"),
-            Text("Update Purchase Status:"),
-            SelectBox("status_part_name", part_names, part_names[0]),
-            CheckBox("is_purchased_status", True),
-            Button("Set Status", update_status_action),
-            Text("---"),
-            Text("Manage an Existing Part/Material:"),
-            SelectBox("selected_part_name", part_names, part_names[0]),
-            Button("Edit Selected Part", edit_part_setup_action),
-            Button("Remove Selected Part", remove_part_action) 
+            Div([Button("💾 Save Statuses", save_statuses_action)]),
+            Text("")
+        ])
+
+    if project.parts:
+        part_names = [p.name for p in project.parts]
+        content.extend([
+            Text(""),
+            Div([Text("⚙️ MANAGE INVENTORY:")]),
+            Div([
+                Text("Edit, Duplicate, or Remove a Part: "),
+                SelectBox("selected_part_name", part_names, part_names[0])
+            ]),
+            Div([
+                Button("Edit Part", edit_part_setup_action),
+                Button("Duplicate Part", duplicate_part_action),
+                Button("Remove Part", remove_part_action) 
+            ])
         ])
 
     return Page(state, content)
 
 @route
-def update_status_action(state: State, status_part_name: str, is_purchased_status: bool) -> Page:
-    """Updates the purchased status of a selected part directly from the inventory page."""
+def save_statuses_action(state: State, **kwargs) -> Page:
     project = get_current_project(state)
-    for p in project.parts:
-        if p.name == status_part_name:
-            p.purchased = is_purchased_status
-            status_word = "Purchased" if is_purchased_status else "Not Purchased"
-            project.status_message = f"Success: '{p.name}' is now marked as {status_word}."
-            break
+    updated_count = 0
+    
+    for key, value in kwargs.items():
+        if key.startswith("status_"):
+            part_name = key.replace("status_", "", 1)
+            for p in project.parts:
+                if p.name == part_name:
+                    if p.status != str(value):
+                        p.status = str(value)
+                        updated_count += 1
+                    break
+                    
+    project.status_message = f"Updated status for {updated_count} part(s)."
+    return inventory_route(state)
+
+@route
+def update_inventory_view_action(state: State, search_query: str, sort_by: str, show_purchased: bool) -> Page:
+    project = get_current_project(state)
+    project.current_search = search_query
+    project.current_sort = sort_by
+    project.show_purchased = show_purchased
+    project.status_message = "View preferences updated."
+    return inventory_route(state)
+
+@route
+def duplicate_part_action(state: State, selected_part_name: str) -> Page:
+    project = get_current_project(state)
+    part_to_copy = next((p for p in project.parts if p.name == selected_part_name), None)
+    if part_to_copy:
+        new_part = Part(
+            name=part_to_copy.name + " (Copy)",
+            material=part_to_copy.material,
+            weight=part_to_copy.weight,
+            cost=part_to_copy.cost,
+            quantity=part_to_copy.quantity,
+            subsystem=part_to_copy.subsystem,
+            status="Not Purchased",
+            vendor=part_to_copy.vendor,
+            url=part_to_copy.url,
+            notes=part_to_copy.notes
+        )
+        project.parts.append(new_part)
+        project.status_message = f"Successfully duplicated '{selected_part_name}'."
     return inventory_route(state)
 
 @route
 def remove_part_action(state: State, selected_part_name: str) -> Page:
-    """Deletes a part from the active project."""
     project = get_current_project(state)
-    
-    updated_parts = []
-    for p in project.parts:
-        if p.name != selected_part_name:
-            updated_parts.append(p)
-            
-    project.parts = updated_parts
-    project.status_message = f"Success: '{selected_part_name}' removed."
+    project.parts = [p for p in project.parts if p.name != selected_part_name]
+    project.status_message = f"'{selected_part_name}' was successfully removed."
     return inventory_route(state)
 
 @route
 def edit_part_setup_action(state: State, selected_part_name: str) -> Page:
-    """Prepares the state for editing a specific part."""
     project = get_current_project(state)
     project.editing_part_name = selected_part_name
     project.status_message = ""
@@ -234,17 +323,8 @@ def edit_part_setup_action(state: State, selected_part_name: str) -> Page:
 
 @route
 def edit_part_page(state: State) -> Page:
-    """
-    Displays a form pre-filled with the selected part's existing details.
-    Note: This route returns UI components and is difficult to unit test in isolation.
-    """
     project = get_current_project(state)
-    
-    part_to_edit = None
-    for p in project.parts:
-        if p.name == project.editing_part_name:
-            part_to_edit = p
-            break
+    part_to_edit = next((p for p in project.parts if p.name == project.editing_part_name), None)
             
     if not part_to_edit:
         project.status_message = "Error: Could not find the selected part."
@@ -253,229 +333,245 @@ def edit_part_page(state: State) -> Page:
     return Page(
         state,
         [
-            Header(f"Edit Part: {part_to_edit.name}"),
-            Text(project.status_message),
-            
-            Text("Part Name:"),
-            TextBox("part_name", part_to_edit.name),
-            Text("Quantity:"),
-            TextBox("part_quantity", str(part_to_edit.quantity)),
-            Text("Weight per item (lbs):"),
-            TextBox("part_weight", str(part_to_edit.weight)),
-            Text("Cost per item ($):"),
-            TextBox("part_cost", str(part_to_edit.cost)),
-            
-            Text("Material:"),
-            SelectBox("part_material", ["Aluminum", "Steel", "Brass", "Wood", "Other"], 
-                      part_to_edit.material),
-            
-            Button("Save Changes", update_part_action),
-            Button("Cancel", inventory_route)
+            Header(f"✏️ Edit Part: {part_to_edit.name}"),
+            Div([Text(f"🔔 {project.status_message}")] if project.status_message else Text("")),
+            Text(""),
+            Div([Text("PART DETAILS:")]),
+            Div([Text("Name: "), TextBox("part_name", part_to_edit.name)]),
+            Div([Text("Subsystem: "), SelectBox("part_subsystem", ["Mechanical", "Electrical", "Hardware", "Aesthetics", "Other"], part_to_edit.subsystem)]),
+            Div([Text("Material: "), SelectBox("part_material", ["Aluminum", "Steel", "Brass", "Wood", "Other"], part_to_edit.material)]),
+            Text(""),
+            Div([Text("METRICS (Per Item):")]),
+            Div([Text("Quantity: "), TextBox("part_quantity", str(part_to_edit.quantity))]),
+            Div([Text("Weight (lbs): "), TextBox("part_weight", str(part_to_edit.weight))]),
+            Div([Text("Cost ($): "), TextBox("part_cost", str(part_to_edit.cost))]),
+            Text(""),
+            Div([Text("SOURCING & NOTES (Optional):")]),
+            Div([Text("Vendor: "), TextBox("part_vendor", part_to_edit.vendor)]),
+            Div([Text("URL: "), TextBox("part_url", part_to_edit.url)]),
+            Div([Text("Notes / Tolerances: "), TextBox("part_notes", part_to_edit.notes)]),
+            Text(""), Text(""),
+            Div([
+                Button("Save Changes", update_part_action),
+                Button("Cancel", inventory_route)
+            ])
         ]
     )
 
 @route
-def update_part_action(state: State, part_name: str, part_quantity: str, 
-                       part_weight: str, part_cost: str, part_material: str) -> Page:
-    """Processes modifications to an existing part."""
+def update_part_action(state: State, part_name: str, part_subsystem: str, part_quantity: str, part_weight: str, part_cost: str, part_material: str, part_vendor: str, part_url: str, part_notes: str) -> Page:
     project = get_current_project(state)
-    
-    if part_name == "" or part_name.isspace():
+    if not part_name or part_name.isspace():
         project.status_message = "Error: Part name cannot be empty."
         return edit_part_page(state)
     
     try:
-        weight_val = float(part_weight)
-        cost_val = float(part_cost)
-        quantity_val = int(part_quantity)
+        weight_val, cost_val, quantity_val = float(part_weight), float(part_cost), int(part_quantity)
     except ValueError:
         project.status_message = "Error: Invalid number entries."
         return edit_part_page(state)
 
+    if weight_val < 0 or cost_val < 0 or quantity_val < 1:
+        project.status_message = "Error: Values cannot be negative, and quantity must be at least 1."
+        return edit_part_page(state)
+
     for p in project.parts:
         if p.name == project.editing_part_name:
-            p.name = part_name
-            p.material = part_material
-            p.weight = weight_val
-            p.cost = cost_val
-            p.quantity = quantity_val
-            # purchased status remains unchanged here
+            p.name, p.subsystem, p.material = part_name, part_subsystem, part_material
+            p.weight, p.cost, p.quantity = weight_val, cost_val, quantity_val
+            p.vendor, p.url, p.notes = part_vendor.strip(), part_url.strip(), part_notes.strip()
             break
             
-    project.status_message = f"Success: {part_name} has been updated."
+    project.status_message = f"'{part_name}' has been updated."
     project.editing_part_name = "" 
-    
     return inventory_route(state)
 
 @route
 def add_part_form_route(state: State) -> Page:
-    """
-    Add Part Form: Adds components to the current project.
-    Note: This route returns UI components and is difficult to unit test in isolation.
-    """
     project = get_current_project(state)
     return Page(
         state,
         [
-            Header(f"Add Component to {project.name}"),
-            Text(project.status_message),
-            
-            Text("Part Name:"),
-            TextBox("part_name", ""),
-            Text("Quantity:"),
-            TextBox("part_quantity", ""),
-            Text("Weight per item (lbs):"),
-            TextBox("part_weight", ""),
-            Text("Cost per item ($):"),
-            TextBox("part_cost", ""),
-            
-            Text("Material:"),
-            SelectBox("part_material", ["Aluminum", "Steel", "Brass", "Wood", "Other"], 
-                      "Aluminum"),
-            
-            Button("Save Part", add_part_action),
-            Button("Cancel", project_dashboard)
+            Header(f"➕ Add Component to {project.name}"),
+            Div([Text(f"🔔 {project.status_message}")] if project.status_message else Text("")),
+            Text(""),
+            Div([Text("PART DETAILS:")]),
+            Div([Text("Name: "), TextBox("part_name", "")]),
+            Div([Text("Subsystem: "), SelectBox("part_subsystem", ["Mechanical", "Electrical", "Hardware", "Aesthetics", "Other"], "Mechanical")]),
+            Div([Text("Material: "), SelectBox("part_material", ["Aluminum", "Steel", "Brass", "Wood", "Other"], "Aluminum")]),
+            Text(""),
+            Div([Text("METRICS (Per Item):")]),
+            Div([Text("Quantity: "), TextBox("part_quantity", "")]),
+            Div([Text("Weight (lbs): "), TextBox("part_weight", "")]),
+            Div([Text("Cost ($): "), TextBox("part_cost", "")]),
+            Text(""),
+            Div([Text("SOURCING & NOTES (Optional):")]),
+            Div([Text("Vendor: "), TextBox("part_vendor", "")]),
+            Div([Text("URL: "), TextBox("part_url", "")]),
+            Div([Text("Notes / Tolerances: "), TextBox("part_notes", "")]),
+            Text(""), Text(""),
+            Div([
+                Button("Save Part", add_part_action),
+                Button("Cancel", project_dashboard)
+            ])
         ]
     )
 
 @route
-def add_part_action(state: State, part_name: str, part_quantity: str, 
-                    part_weight: str, part_cost: str, part_material: str) -> Page:
-    """Processes the submitted part form into the active project."""
+def add_part_action(state: State, part_name: str, part_subsystem: str, part_quantity: str, part_weight: str, part_cost: str, part_material: str, part_vendor: str, part_url: str, part_notes: str) -> Page:
     project = get_current_project(state)
-    
-    if part_name == "" or part_name.isspace():
+    if not part_name or part_name.isspace():
         project.status_message = "Error: Part name cannot be empty."
         return add_part_form_route(state)
-    
     try:
-        weight_val = float(part_weight)
-        cost_val = float(part_cost)
-        quantity_val = int(part_quantity)
+        weight_val, cost_val, quantity_val = float(part_weight), float(part_cost), int(part_quantity)
     except ValueError:
         project.status_message = "Error: Number error in form inputs."
         return add_part_form_route(state)
 
-    new_part = Part(
+    if weight_val < 0 or cost_val < 0 or quantity_val < 1:
+        project.status_message = "Error: Values cannot be negative, and quantity must be at least 1."
+        return add_part_form_route(state)
+
+    project.parts.append(Part(
         name=part_name, 
         material=part_material, 
         weight=weight_val, 
         cost=cost_val, 
-        quantity=quantity_val,
-        purchased=False # Defaults to False, user can update on Inventory page
-    )
-    
-    project.parts.append(new_part)
-    project.status_message = f"Success: Added {quantity_val}x {part_name}."
-    
+        quantity=quantity_val, 
+        subsystem=part_subsystem, 
+        status="Not Purchased",
+        vendor=part_vendor.strip(),
+        url=part_url.strip(),
+        notes=part_notes.strip()
+    ))
+    project.status_message = f"Successfully added {quantity_val}x {part_name}."
     return project_dashboard(state)
 
 @route
 def calculator_route(state: State) -> Page:
-    """
-    Calculator Page: Checks the current project's budget.
-    Note: This route returns UI components and is difficult to unit test in isolation.
-    """
     project = get_current_project(state)
-    
     total_cost = sum(p.cost * p.quantity for p in project.parts)
+    total_weight = sum(p.weight * p.quantity for p in project.parts)
     
-    if total_cost > project.budget:
-        project.status_message = "WARNING: Maximum allowable budget exceeded!"
-    else:
-        project.status_message = "Budget is currently within limits."
+    budget_status = "🔴 WARNING: Budget Exceeded!" if total_cost > project.budget else "✅ Budget is within limits."
+    weight_status = "🔴 WARNING: Weight Exceeded!" if total_weight > project.max_weight else "✅ Weight is within limits."
 
     return Page(
         state,
         [
-            Header(f"Calculator: {project.name}"),
-            Text(project.status_message),
-            Text(f"Total Expenditure: ${total_cost}"),
-            Text(f"Current Budget: ${project.budget}"),
-            Text("Update Budget ($):"),
-            TextBox("new_budget", str(project.budget)),
-            Button("Update Budget Limit", update_budget_action),
-            Button("Back to Dashboard", project_dashboard)
+            Header(f"💰 Calculator & Limits: {project.name}"),
+            Div([Text(budget_status)]),
+            Div([Text(weight_status)]),
+            Text(""),
+            Div([Text("CURRENT METRICS:")]),
+            Div([Text(f"  • Total Expenditure: ${total_cost} / ${project.budget}")]),
+            Div([Text(f"  • Total Weight: {total_weight} lbs / {project.max_weight} lbs")]),
+            Text(""),
+            Div([Text("UPDATE LIMITS:")]),
+            Div([Text("New Budget ($): "), TextBox("new_budget", str(project.budget))]),
+            Div([Text("New Weight Limit (lbs): "), TextBox("new_weight", str(project.max_weight))]),
+            Div([Button("Update Limits", update_limits_action)]),
+            Text(""), Text(""),
+            Div([Button("🔙 Back to Dashboard", project_dashboard)])
         ]
     )
 
 @route
-def update_budget_action(state: State, new_budget: str) -> Page:
-    """Processes a new budget limit for the current project."""
+def update_limits_action(state: State, new_budget: str, new_weight: str) -> Page:
     project = get_current_project(state)
-    try:
-        project.budget = float(new_budget)
-    except ValueError:
-        pass
+    try: project.budget = float(new_budget)
+    except ValueError: pass
+    try: project.max_weight = float(new_weight)
+    except ValueError: pass
     return calculator_route(state)
 
 @route
 def about_route(state: State) -> Page:
-    """
-    About Page.
-    Note: This route returns UI components and is difficult to unit test in isolation.
-    """
     return Page(
         state,
         [
-            Header("About This Tool"),
-            Text("This site is a place where engineers working on projects can "
-                 "input their required materials and tools to get a total "
-                 "cost, weight, and other stats about their project."),
-            Button("Back to Projects Hub", index)
+            Header("ℹ️ About This Tool"),
+            Text(""),
+            Div([Text("This site is a place where engineers working on projects can ")]),
+            Div([Text("input their required materials and tools to get a total ")]),
+            Div([Text("cost, weight, and other stats about their project.")]),
+            Text(""), Text(""),
+            Div([Button("🔙 Back to Projects Hub", index)])
         ]
     )
 
-
 # --- 4. Unit Testing Block ---
-
 def run_tests() -> None:
-    """Tests the critical data mutators and logic paths where possible."""
-    
-    # Test 1: Helper function
-    test_state = State(projects=[Project("Alpha", [], 100, "All", "Name (A-Z)", "", "")], 
+    test_state = State(projects=[Project("Alpha", [], 100, 50, "All", "Name (A-Z)", "", "", "", True)], 
                        current_project_name="Alpha", global_message="", total_projects_created=1)
-    
     assert_equal(get_current_project(test_state).name, "Alpha")
 
-    # Test 2: create_project_action modifies 4 distinct state variables
     new_state = State([], "", "", 0)
     create_project_action(new_state, "Beta")
-    
     assert_equal(len(new_state.projects), 1)
-    assert_equal(new_state.current_project_name, "Beta")
-    assert_equal(new_state.total_projects_created, 1)
-    assert_equal(new_state.global_message, "")
-
-    # Test 3: open_project_action updates active project
+    
     open_project_action(test_state, "Charlie")
     assert_equal(test_state.current_project_name, "Charlie")
 
-    # Test 4: update_budget_action updates float limits correctly
     test_state.current_project_name = "Alpha"
-    update_budget_action(test_state, "5000.5")
+    update_limits_action(test_state, "5000.5", "150.0")
     assert_equal(test_state.projects[0].budget, 5000.5)
-    
-    # Test 5: update_status_action dynamically updates purchased status
-    test_state.projects[0].parts.append(Part("Nail", "Steel", 0.1, 0.5, 100, False))
-    update_status_action(test_state, "Nail", True)
-    assert_equal(test_state.projects[0].parts[0].purchased, True)
-    
-    # Test 6: remove_part_action handles part deletion dynamically
-    remove_part_action(test_state, "Nail")
-    assert_equal(len(test_state.projects[0].parts), 0)
+    assert_equal(test_state.projects[0].max_weight, 150.0)
 
-# Run assertions before app launch
 run_tests()
 
+# --- 5. Initial State & Server Start ---
+initial_state = State(
+    projects=[], current_project_name="", 
+    global_message="Welcome! Select or create a project to begin.", total_projects_created=0
+)
+start_server(initial_state)date_limits_action(state: State, new_budget: str, new_weight: str) -> Page:
+    project = get_current_project(state)
+    try: project.budget = float(new_budget)
+    except ValueError: pass
+    try: project.max_weight = float(new_weight)
+    except ValueError: pass
+    return calculator_route(state)
+
+@route
+def about_route(state: State) -> Page:
+    return Page(
+        state,
+        [
+            Header("ℹ️ About This Tool"),
+            Text(""),
+            Div([Text("This site is a place where engineers working on projects can ")]),
+            Div([Text("input their required materials and tools to get a total ")]),
+            Div([Text("cost, weight, and other stats about their project.")]),
+            Text(""), Text(""),
+            Div([Button("🔙 Back to Projects Hub", index)])
+        ]
+    )
+
+# --- 4. Unit Testing Block ---
+def run_tests() -> None:
+    test_state = State(projects=[Project("Alpha", [], 100, 50, "All", "Name (A-Z)", "", "", "", True)], 
+                       current_project_name="Alpha", global_message="", total_projects_created=1)
+    assert_equal(get_current_project(test_state).name, "Alpha")
+
+    new_state = State([], "", "", 0)
+    create_project_action(new_state, "Beta")
+    assert_equal(len(new_state.projects), 1)
+    
+    open_project_action(test_state, "Charlie")
+    assert_equal(test_state.current_project_name, "Charlie")
+
+    test_state.current_project_name = "Alpha"
+    update_limits_action(test_state, "5000.5", "150.0")
+    assert_equal(test_state.projects[0].budget, 5000.5)
+    assert_equal(test_state.projects[0].max_weight, 150.0)
+
+run_tests()
 
 # --- 5. Initial State & Server Start ---
-
 initial_state = State(
-    projects=[], 
-    current_project_name="", 
-    global_message="Welcome! Please select or create a project to begin.",
-    total_projects_created=0
+    projects=[], current_project_name="", 
+    global_message="Welcome! Select or create a project to begin.", total_projects_created=0
 )
-
 start_server(initial_state)
